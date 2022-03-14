@@ -1,4 +1,3 @@
-import uuid
 import vk_api
 from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
@@ -7,7 +6,10 @@ from tokens import main_token, stl_token
 import messages
 import operator
 import random
+import sqlite3
 from threading import Thread
+from datetime import datetime
+from itertools import islice
 
 #region keyboards
 main_keyboard = VkKeyboard(one_time=True)
@@ -20,11 +22,15 @@ main_keyboard.add_button("Что бот умеет?", color=VkKeyboardColor.SECO
 back_keyboard = VkKeyboard(one_time=True)
 back_keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY)
 #endregion
-
+#region vk connection
 vk_session = vk_api.VkApi(token=main_token)
 vk = vk_session.get_api()
 longpoll = VkLongPoll(vk_session)
-
+#endregion
+#region sqlite connection
+connection = sqlite3.connect("users.db")
+cursor = connection.cursor()
+#endregion
 
 def stl_session():
     stl_token[0] += 1
@@ -33,10 +39,11 @@ def stl_session():
 
     return vk_api.VkApi(token=stl_token[stl_token[0]])
 
-#check for banned tokens
+#region check for banned tokens
 for token in stl_token[1::]:
     print("TOKEN ", token, " : ")
     res = stl_session().method("friends.get", {"user_id": "253605549"})
+#endregion
 
 flag = "MADE BY POLICELETTUCE 15.02.2022"
 busy_users = []
@@ -49,25 +56,31 @@ def check(raw_link, current_event):
         return
     else:
         busy_users.append(current_event.user_id)
-        print(busy_users)
         parts = raw_link.split("/")
         user_sex = 0
         try:
             temp = vk_session.method("users.get", {"user_id": parts[-1], "fields": "sex"})[0]
             user_id = temp.get("id")
             user_sex = temp.get("sex")
-        except Exception:
+            user_name = temp.get("first_name") + " " + temp.get("last_name")
+        except Exception as exc:
+            busy_users.remove(current_event.user_id)
             vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
                              message=messages.message_error_user_search,
                              keyboard=main_keyboard.get_keyboard())
+            print("USERS.GET ERROR! ", exc)
             return
 
         try:
-            friends_list = stl_session().method("friends.get", {"user_id": user_id, "order": "random", "count": 500}).get("items")
-        except Exception:
+            temp = stl_session().method("friends.get", {"user_id": user_id, "order": "random", "count": 500})
+            friends_list = temp.get("items")
+            friends_count = temp.get("count")
+        except Exception as exc:
+            busy_users.remove(current_event.user_id)
             vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
                              message=messages.message_error_user_private,
                              keyboard=main_keyboard.get_keyboard())
+            print("FRIENDS.GET ERROR! ", exc)
             return
 
         vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
@@ -96,6 +109,7 @@ def check(raw_link, current_event):
                         print("APPENDED!")
 
                     photos = stl_session().method("photos.get", {"user_id": friend_id, "album_id": "profile"}).get("items")
+                    photos += stl_session().method("photos.get", {"user_id": friend_id, "album_id": "wall"}).get("items")
 
                     for photo in photos:
                         is_liked = stl_session().method("likes.isLiked", {"user_id": user_id, "type": "photo",
@@ -107,12 +121,48 @@ def check(raw_link, current_event):
             except Exception:
                 continue
 
-    sorted_dict = sorted(times_user_liked.items(), key=operator.itemgetter(1))
+    times_user_liked = sorted(times_user_liked.items(), key=operator.itemgetter(1))
+    times_user_liked.reverse()
     random.shuffle(no_mutual_friends)
-    print("LIKES: ", sorted_dict)
+    print("LIKES: ", times_user_liked)
     print(no_mutual_friends)
+
+    #region message formatting
+    message_name = "👤" + user_name + "\n\n"
+    temp = vk_session.method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
+    user_last_seen = temp.get("last_seen").get("time")
+    message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime("%d.%m.%Y, %H:%M") + "\n"
+    message_friends_amt = "👫Друзей: " + str(friends_count) + "\n\n"
+
+    message_liked = "❤Больше всего лайкает:\n"
+    ctr = 1
+    for key in islice(times_user_liked, 5):
+        temp = stl_session().method("users.get", {"user_id": key[0]})[0]
+        name = temp.get("first_name") + " " + temp.get("last_name")
+        message_liked += str(ctr) + ") [id" + str(key[0]) + "|" + str(name) + "]: " + str(key[1]) + "\n"
+        ctr += 1
+    message_liked += "\n"
+
+    message_no_mutuals = "🤔Нет общих друзей с:\n"
+    ctr = 1
+    for id in no_mutual_friends[:5]:
+        temp = stl_session().method("users.get", {"user_id": id})[0]
+        name = temp.get("first_name") + " " + temp.get("last_name")
+        message_no_mutuals += str(ctr) + ") [id" + str(id) + "|" + str(name) + "]\n"
+        ctr += 1
+    message_no_mutuals += "\n"
+
+    message_most_wanted = "🤭Самый подозрительный человек:\n"
+    for key in islice(times_user_liked, 1):
+        temp = stl_session().method("users.get", {"user_id": key[0]})[0]
+        name = temp.get("first_name") + " " + temp.get("last_name")
+        message_most_wanted += "[id" + str(key[0]) + "|" + str(name) + "]" + "\n"
+
+    message_check = message_name + message_last_seen + message_friends_amt + message_liked + message_no_mutuals + message_most_wanted
+    #endregion
+    busy_users.remove(current_event.user_id)
     vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
-                     message=messages.message_check_finished)
+                     message=message_check)
 
 
 for event in longpoll.listen():
