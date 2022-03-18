@@ -21,6 +21,13 @@ main_keyboard.add_button("Что бот умеет?", color=VkKeyboardColor.SECO
 
 back_keyboard = VkKeyboard(one_time=True)
 back_keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY)
+
+payment_keyboard = VkKeyboard(inline=True)
+payment_keyboard.add_button("1x 🔑", color=VkKeyboardColor.PRIMARY)
+payment_keyboard.add_button("3x 🔑", color=VkKeyboardColor.PRIMARY)
+payment_keyboard.add_button("6x 🔑", color=VkKeyboardColor.PRIMARY)
+payment_keyboard.add_line()
+payment_keyboard.add_button("10x 🔑", color=VkKeyboardColor.PRIMARY)
 #endregion
 #region vk connection
 vk_session = vk_api.VkApi(token=main_token)
@@ -30,6 +37,7 @@ longpoll = VkLongPoll(vk_session)
 #region sqlite connection
 connection = sqlite3.connect("users.db")
 cursor = connection.cursor()
+
 #endregion
 
 def stl_session():
@@ -38,6 +46,32 @@ def stl_session():
         stl_token[0] = 1
 
     return vk_api.VkApi(token=stl_token[stl_token[0]])
+
+def get_workflag(user_id):
+    cursor.execute("SELECT workflag FROM users WHERE userid=?", (user_id,))
+    workflag = cursor.fetchall()
+    if not workflag:
+        cursor.execute("INSERT INTO users(userid,balance,workflag) VALUES(?,?,?)", (user_id, 0, 0,))
+        connection.commit()
+    else:
+        return workflag[0][0]
+
+def set_workflag(user_id, flag):
+    temp = get_workflag(user_id)
+    cursor.execute("SELECT * FROM users WHERE userid=?", (user_id,))
+    workflag = cursor.fetchall()
+    print(workflag)
+
+    sql = "UPDATE users SET workflag=? WHERE userid=?"
+    val = (str(flag), str(user_id),)
+    print("VAL IS ", val)
+    cursor.execute(sql, val)
+    connection.commit()
+
+    cursor.execute("SELECT * FROM users WHERE userid=?", (user_id,))
+    workflag = cursor.fetchall()
+    print(workflag)
+
 
 #region check for banned tokens
 for token in stl_token[1::]:
@@ -52,7 +86,7 @@ busy_users = []
 def check(raw_link, current_event):
     if current_event.user_id in busy_users:
         vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
-                         message=messages.message_wait_for_check, keyboard=main_keyboard.get_keyboard())
+                         message=messages.message_wait_for_check, keyboard=back_keyboard.get_keyboard())
         return
     else:
         busy_users.append(current_event.user_id)
@@ -162,36 +196,37 @@ def check(raw_link, current_event):
     #endregion
     busy_users.remove(current_event.user_id)
     vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
-                     message=message_check)
+                     message=message_check, keyboard=back_keyboard.get_keyboard())
 
 
-for event in longpoll.listen():
+for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
     if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text and event.from_user:
         text = event.text
         if (text == "Начать" or text == "Назад"):
-            flag = "nothing"
+            set_workflag(event.user_id, 0)
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                              message=messages.message_choose, keyboard=main_keyboard.get_keyboard())
 
         elif (text == "Что бот умеет?"):
-            flag = "nothing"
+            set_workflag(event.user_id, 0)
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                              message=messages.message_bot_func, keyboard=main_keyboard.get_keyboard())
 
         elif (text == "Установить слежку"):
-            flag = "spy"
+            set_workflag(event.user_id, 2)
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                              message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
 
         elif (text == "Проверить пользователя"):
-            flag = "check"
+            set_workflag(event.user_id, 1)
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                              message=messages.message_check_link, keyboard=back_keyboard.get_keyboard())
 
         else:
-            if (flag == "check"):
+            get_workflag(event.user_id)
+            if (get_workflag(event.user_id) == 1):
                 Thread(target=check, args=(text, event,)).start()
-            elif (flag == "spy"):
+            elif (get_workflag(event.user_id) == 2):
                 temp = 1
             else:
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
