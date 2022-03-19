@@ -111,10 +111,7 @@ def buy_keys(cash_amount, keys_amount, user_id):
 def is_enough_keys(user_id):
     cursor.execute("SELECT balance FROM users WHERE userid=?", (user_id,))
     balance = cursor.fetchall()
-    print(balance)
     if balance[0][0] < 1:
-        vk.messages.send(user_id=user_id, random_id=get_random_id(),
-                         message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
         return False
     else:
         return True
@@ -146,6 +143,43 @@ def check_payment(user_id):
         return True
     else:
         return False
+
+def send_closed_check_message(user_id, text):
+    parts = text.split("/")
+    try:
+        temp = vk_session.method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
+        user_id = temp.get("id")
+        user_name = temp.get("first_name") + " " + temp.get("last_name")
+        user_last_seen = temp.get("last_seen").get("time")
+    except Exception as exc:
+        vk.messages.send(user_id=user_id, random_id=get_random_id(),
+                         message=messages.message_error_user_search,
+                         keyboard=back_keyboard.get_keyboard())
+        return
+
+    try:
+        temp = stl_session().method("friends.get",
+                                    {"user_id": user_id, "order": "random", "count": 500})
+        friends_count = temp.get("count")
+    except Exception as exc:
+        vk.messages.send(user_id=user_id, random_id=get_random_id(),
+                         message=messages.message_error_user_private,
+                         keyboard=main_keyboard.get_keyboard())
+        return
+    #region message formatting
+    message_name = "👤" + user_name + "\n\n"
+    message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime(
+        "%d.%m.%Y, %H:%M") + "\n"
+    message_friends_amt = "👫Друзей: " + str(friends_count) + "\n\n"
+    message_liked = "❤Больше всего лайкает: 🔒\n"
+    message_no_mutuals = "🤔Нет общих друзей с: 🔒\n"
+    message_most_wanted = "🤭Самый подозрительный человек: 🔒\n\n"
+    message_fin = "Узнать данные за 🔒 вы можете всего за один 🔑 ключ!\nВаш баланс: 0 🔑"
+    message_check = message_name + message_last_seen + message_friends_amt + message_liked + message_no_mutuals + message_most_wanted + message_fin
+    #endregion
+    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                     message=message_check,
+                     keyboard=balance_keyboard.get_keyboard())
 
 #region check for banned tokens
 for token in stl_token[1::]:
@@ -332,6 +366,8 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                                          message=(messages.message_check_in_progress + str(get_balance(event.user_id)) + " 🔑"))
                         Thread(target=check, args=(event, friends_list, user_sex, user_id, friends_count, parts, user_name)).start()
                     #endregion
+                else:
+                    send_closed_check_message(event.user_id, text)
             elif (get_workflag(event.user_id) == 2):
                 temp = 1
             else:
