@@ -2,9 +2,8 @@ import vk_api
 from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.utils import get_random_id
-import time
-import tokens
 from tokens import main_token, stl_token, qiwi_secret_token
+from pricing import x1_key_price, x3_key_price, x6_key_price, x10_key_price
 import messages
 import operator
 import random
@@ -101,6 +100,14 @@ def get_balance(user_id):
     else:
         return workflag[0][0]
 
+def buy_keys(cash_amount, keys_amount, user_id):
+    comment = str(event.user_id) + "_" + str(random.randint(1000, 9999))
+    bill = p2p.bill(amount=cash_amount, lifetime=15, comment=comment)
+    msg = messages.message_payment + bill.pay_url
+    add_payment(event.user_id, bill.bill_id, keys_amount)
+    vk.messages.send(user_id=user_id, random_id=get_random_id(),
+                     message=msg, keyboard=check_payment_keyboard.get_keyboard())
+
 def is_enough_keys(user_id):
     cursor.execute("SELECT balance FROM users WHERE userid=?", (user_id,))
     balance = cursor.fetchall()
@@ -120,6 +127,26 @@ def add_payment(user_id, bill_id, keys):
     cursor.execute("INSERT INTO payments(userid, billid, keys) VALUES(?,?,?)", (user_id, bill_id, keys,))
     connection.commit()
 
+def check_payment(user_id):
+    cursor.execute("SELECT * FROM payments WHERE userid=?", (str(user_id),))
+    payments = cursor.fetchall()
+    is_paid = False
+    for payment in payments:
+        if str(p2p.check(bill_id=payment[1]).status) == "PAID":
+            is_paid = True
+            user_id = payment[0]
+            keys = payment[2]
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE userid = ?", (str(keys), str(user_id),))
+            cursor.execute("DELETE FROM payments WHERE billid = ?", (str(payment[1]),))
+        elif (str(p2p.check(bill_id=payment[1]).status) == "REJECTED") or (
+                str(p2p.check(bill_id=payment[1]).status) == "EXPIRED"):
+            cursor.execute("DELETE FROM payments WHERE billid = ?", (str(payment[1]),))
+        connection.commit()
+    if is_paid:
+        return True
+    else:
+        return False
+
 #region check for banned tokens
 for token in stl_token[1::]:
     print("TOKEN ", token, " : ")
@@ -129,78 +156,43 @@ for token in stl_token[1::]:
 flag = "MADE BY POLICELETTUCE 15.02.2022"
 busy_users = []
 
-def check(raw_link, current_event):
-    if current_event.user_id in busy_users:
-        vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
-                         message=messages.message_wait_for_check, keyboard=back_keyboard.get_keyboard())
-        return
-    else:
-        busy_users.append(current_event.user_id)
-        parts = raw_link.split("/")
-        user_sex = 0
+
+def check(current_event, friends_list, user_sex, user_id, friends_count, parts, user_name):
+    times_user_liked = {}
+    no_mutual_friends = []
+
+    for friend_id in friends_list:
         try:
-            temp = vk_session.method("users.get", {"user_id": parts[-1], "fields": "sex"})[0]
-            user_id = temp.get("id")
-            user_sex = temp.get("sex")
-            user_name = temp.get("first_name") + " " + temp.get("last_name")
-        except Exception as exc:
-            busy_users.remove(current_event.user_id)
-            vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
-                             message=messages.message_error_user_search,
-                             keyboard=back_keyboard.get_keyboard())
-            print("USERS.GET ERROR! ", exc)
-            return
-
-        try:
-            temp = stl_session().method("friends.get", {"user_id": user_id, "order": "random", "count": 500})
-            friends_list = temp.get("items")
-            friends_count = temp.get("count")
-        except Exception as exc:
-            busy_users.remove(current_event.user_id)
-            vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
-                             message=messages.message_error_user_private,
-                             keyboard=main_keyboard.get_keyboard())
-            print("FRIENDS.GET ERROR! ", exc)
-            return
-
-        vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
-                         message=messages.message_check_in_progress)
-        decrement_balance(event.user_id)        #ПИЗДИМ денЬГИ У АБОненТА
-        times_user_liked = {}
-        no_mutual_friends = []
-
-        for friend_id in friends_list:
-            try:
-                times_user_liked[friend_id] = 0
-                need_to_check = False
-                if user_sex != 0:
-                    sex = vk_session.method("users.get", {"user_id": friend_id, "fields": "sex"})[0].get("sex")
-                    if sex != user_sex:
-                        need_to_check = True
-
-                else:
+            times_user_liked[friend_id] = 0
+            need_to_check = False
+            if user_sex != 0:
+                sex = vk_session.method("users.get", {"user_id": friend_id, "fields": "sex"})[0].get("sex")
+                if sex != user_sex:
                     need_to_check = True
 
-                if need_to_check:
-                    mutual = stl_session().method("friends.getMutual", {"source_uid": user_id, "target_uids": friend_id})[0].get("common_count")
-                    print("CHECKING MUTUAL BETWEEN ", user_id, " AND ", friend_id)
-                    print("AMT OF MUTUALS: ", mutual)
-                    if mutual == 0:
-                        no_mutual_friends.append(friend_id)
-                        print("APPENDED!")
+            else:
+                need_to_check = True
 
-                    photos = stl_session().method("photos.get", {"user_id": friend_id, "album_id": "profile"}).get("items")
-                    photos += stl_session().method("photos.get", {"user_id": friend_id, "album_id": "wall"}).get("items")
+            if need_to_check:
+                mutual = stl_session().method("friends.getMutual", {"source_uid": user_id, "target_uids": friend_id})[0].get("common_count")
+                print("CHECKING MUTUAL BETWEEN ", user_id, " AND ", friend_id)
+                print("AMT OF MUTUALS: ", mutual)
+                if mutual == 0:
+                    no_mutual_friends.append(friend_id)
+                    print("APPENDED!")
 
-                    for photo in photos:
-                        is_liked = stl_session().method("likes.isLiked", {"user_id": user_id, "type": "photo",
-                                                        "owner_id": friend_id, "item_id": photo.get("id")}).get("liked")
-                        if (is_liked):
-                            times_user_liked[friend_id] += 1
-                            print("FOUND LIKED PHOTO! TOTAL LIKES BY USER: ", times_user_liked[friend_id])
+                photos = stl_session().method("photos.get", {"user_id": friend_id, "album_id": "profile"}).get("items")
+                photos += stl_session().method("photos.get", {"user_id": friend_id, "album_id": "wall"}).get("items")
 
-            except Exception:
-                continue
+                for photo in photos:
+                    is_liked = stl_session().method("likes.isLiked", {"user_id": user_id, "type": "photo",
+                                                    "owner_id": friend_id, "item_id": photo.get("id")}).get("liked")
+                    if (is_liked):
+                        times_user_liked[friend_id] += 1
+                        print("FOUND LIKED PHOTO! TOTAL LIKES BY USER: ", times_user_liked[friend_id])
+
+        except Exception:
+            continue
 
     times_user_liked = sorted(times_user_liked.items(), key=operator.itemgetter(1))
     times_user_liked.reverse()
@@ -245,6 +237,7 @@ def check(raw_link, current_event):
     vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
                      message=message_check, keyboard=back_keyboard.get_keyboard())
 
+
 for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
     if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text and event.from_user:
         text = event.text
@@ -264,23 +257,8 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                              message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
 
         elif (text == "Проверить оплату"):
-            cursor.execute("SELECT * FROM payments WHERE userid=?", (str(event.user_id),))
-            payments = cursor.fetchall()
-            is_paid = False
-            for payment in payments:
-                if str(p2p.check(bill_id=payment[1]).status) == "PAID":
-                    is_paid = True
-                    user_id = payment[0]
-                    keys = payment[2]
-                    print("PAYMENT[1] IS " + payment[1])
-                    cursor.execute("UPDATE users SET balance = balance + ? WHERE userid = ?", (str(keys), str(user_id),))
-                    cursor.execute("DELETE FROM payments WHERE billid = ?", (str(payment[1]),))
-                elif (str(p2p.check(bill_id=payment[1]).status) == "REJECTED") or (str(p2p.check(bill_id=payment[1]).status) == "EXPIRED"):
-                    cursor.execute("DELETE FROM payments WHERE billid = ?", (str(payment[1]),))
-                connection.commit()
-
-            if is_paid:
-                msg = messages.message_payment_successful + str(get_balance(event.user_id))
+            if check_payment(event.user_id):
+                msg = messages.message_payment_successful + str(get_balance(event.user_id)) + " 🔑"
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message=msg, keyboard=main_keyboard.get_keyboard())
             else:
@@ -288,19 +266,23 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                                  message=messages.message_payment_failed, keyboard=main_keyboard.get_keyboard())
 
         elif (text == "Купить 🔑"):
-            msg_balance = "Ваш текущий баланс: " + str(get_balance(event.user_id)) + "🔑"
+            msg_balance = "Ваш текущий баланс: " + str(get_balance(event.user_id)) + " 🔑"
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                              message=messages.message_pricelist, keyboard=payment_keyboard.get_keyboard())
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                              message=msg_balance, keyboard=main_keyboard.get_keyboard())
 
         elif (text == "1x 🔑"):
-            comment = str(event.user_id) + "_" + str(random.randint(100000, 999999))
-            bill = p2p.bill(amount=5, lifetime=2, comment=comment)
-            msg = messages.message_payment + bill.pay_url
-            add_payment(event.user_id, bill.bill_id, 1)
-            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message=msg, keyboard=check_payment_keyboard.get_keyboard())
+            buy_keys(x1_key_price, 1, event.user_id)
+
+        elif (text == "3x 🔑"):
+            buy_keys(x3_key_price, 3, event.user_id)
+
+        elif (text == "6x 🔑"):
+            buy_keys(x6_key_price, 6, event.user_id)
+
+        elif (text == "10x 🔑"):
+            buy_keys(x10_key_price, 10, event.user_id)
 
         elif (text == "Проверить пользователя"):
             set_workflag(event.user_id, 1)
@@ -310,8 +292,46 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
         else:
             get_workflag(event.user_id)
             if (get_workflag(event.user_id) == 1):
+                check_payment(event.user_id)
                 if is_enough_keys(event.user_id):
-                    Thread(target=check, args=(text, event,)).start()
+                    #region check start
+                    if event.user_id in busy_users:
+                        vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                         message=messages.message_wait_for_check, keyboard=back_keyboard.get_keyboard())
+                        continue
+                    else:
+                        busy_users.append(event.user_id)
+                        parts = text.split("/")
+                        user_sex = 0
+                        try:
+                            temp = vk_session.method("users.get", {"user_id": parts[-1], "fields": "sex"})[0]
+                            user_id = temp.get("id")
+                            user_sex = temp.get("sex")
+                            user_name = temp.get("first_name") + " " + temp.get("last_name")
+                        except Exception as exc:
+                            busy_users.remove(event.user_id)
+                            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                             message=messages.message_error_user_search,
+                                             keyboard=back_keyboard.get_keyboard())
+                            continue
+
+                        try:
+                            temp = stl_session().method("friends.get",
+                                                        {"user_id": user_id, "order": "random", "count": 500})
+                            friends_list = temp.get("items")
+                            friends_count = temp.get("count")
+                        except Exception as exc:
+                            busy_users.remove(event.user_id)
+                            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                             message=messages.message_error_user_private,
+                                             keyboard=main_keyboard.get_keyboard())
+                            continue
+
+                        decrement_balance(event.user_id)    # ПИЗДИМ денЬГИ У АБОненТА
+                        vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                         message=(messages.message_check_in_progress + str(get_balance(event.user_id)) + " 🔑"))
+                        Thread(target=check, args=(event, friends_list, user_sex, user_id, friends_count, parts, user_name)).start()
+                    #endregion
             elif (get_workflag(event.user_id) == 2):
                 temp = 1
             else:
