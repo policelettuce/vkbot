@@ -2,7 +2,9 @@ import vk_api
 from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.utils import get_random_id
-from tokens import main_token, stl_token
+import time
+import tokens
+from tokens import main_token, stl_token, qiwi_secret_token
 import messages
 import operator
 import random
@@ -10,12 +12,15 @@ import sqlite3
 from threading import Thread
 from datetime import datetime
 from itertools import islice
+from pyqiwip2p import QiwiP2P
 
 #region keyboards
 main_keyboard = VkKeyboard(one_time=True)
 main_keyboard.add_button("Проверить пользователя", color=VkKeyboardColor.PRIMARY)
 main_keyboard.add_line()
 main_keyboard.add_button("Установить слежку", color=VkKeyboardColor.PRIMARY)
+main_keyboard.add_line()
+main_keyboard.add_button("Купить 🔑", color=VkKeyboardColor.POSITIVE)
 main_keyboard.add_line()
 main_keyboard.add_button("Что бот умеет?", color=VkKeyboardColor.SECONDARY)
 
@@ -28,6 +33,16 @@ payment_keyboard.add_button("3x 🔑", color=VkKeyboardColor.PRIMARY)
 payment_keyboard.add_button("6x 🔑", color=VkKeyboardColor.PRIMARY)
 payment_keyboard.add_line()
 payment_keyboard.add_button("10x 🔑", color=VkKeyboardColor.PRIMARY)
+
+check_payment_keyboard = VkKeyboard(inline=True)
+check_payment_keyboard.add_button("Проверить оплату", color=VkKeyboardColor.POSITIVE)
+check_payment_keyboard.add_line()
+check_payment_keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY)
+
+balance_keyboard = VkKeyboard(inline=True)
+balance_keyboard.add_button("Купить 🔑", color=VkKeyboardColor.POSITIVE)
+balance_keyboard.add_line()
+balance_keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY)
 #endregion
 #region vk connection
 vk_session = vk_api.VkApi(token=main_token)
@@ -38,6 +53,9 @@ longpoll = VkLongPoll(vk_session)
 connection = sqlite3.connect("users.db")
 cursor = connection.cursor()
 
+#endregion
+#region qiwi connection
+p2p = QiwiP2P(auth_key=qiwi_secret_token)
 #endregion
 
 def stl_session():
@@ -53,6 +71,7 @@ def get_workflag(user_id):
     if not workflag:
         cursor.execute("INSERT INTO users(userid,balance,workflag) VALUES(?,?,?)", (user_id, 0, 0,))
         connection.commit()
+        return 0
     else:
         return workflag[0][0]
 
@@ -72,6 +91,34 @@ def set_workflag(user_id, flag):
     workflag = cursor.fetchall()
     print(workflag)
 
+def get_balance(user_id):
+    cursor.execute("SELECT balance FROM users WHERE userid=?", (user_id,))
+    workflag = cursor.fetchall()
+    if not workflag:
+        cursor.execute("INSERT INTO users(userid,balance,workflag) VALUES(?,?,?)", (user_id, 0, 0,))
+        connection.commit()
+        return 0
+    else:
+        return workflag[0][0]
+
+def is_enough_keys(user_id):
+    cursor.execute("SELECT balance FROM users WHERE userid=?", (user_id,))
+    balance = cursor.fetchall()
+    print(balance)
+    if balance[0][0] < 1:
+        vk.messages.send(user_id=user_id, random_id=get_random_id(),
+                         message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+        return False
+    else:
+        return True
+
+def decrement_balance(user_id):
+    cursor.execute("UPDATE users SET balance = balance - 1 WHERE userid = ?", (str(user_id),))
+    connection.commit()
+
+def add_payment(user_id, bill_id, keys):
+    cursor.execute("INSERT INTO payments(userid, billid, keys) VALUES(?,?,?)", (user_id, bill_id, keys,))
+    connection.commit()
 
 #region check for banned tokens
 for token in stl_token[1::]:
@@ -81,7 +128,6 @@ for token in stl_token[1::]:
 
 flag = "MADE BY POLICELETTUCE 15.02.2022"
 busy_users = []
-
 
 def check(raw_link, current_event):
     if current_event.user_id in busy_users:
@@ -101,7 +147,7 @@ def check(raw_link, current_event):
             busy_users.remove(current_event.user_id)
             vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
                              message=messages.message_error_user_search,
-                             keyboard=main_keyboard.get_keyboard())
+                             keyboard=back_keyboard.get_keyboard())
             print("USERS.GET ERROR! ", exc)
             return
 
@@ -119,6 +165,7 @@ def check(raw_link, current_event):
 
         vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
                          message=messages.message_check_in_progress)
+        decrement_balance(event.user_id)        #ПИЗДИМ денЬГИ У АБОненТА
         times_user_liked = {}
         no_mutual_friends = []
 
@@ -198,7 +245,6 @@ def check(raw_link, current_event):
     vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
                      message=message_check, keyboard=back_keyboard.get_keyboard())
 
-
 for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
     if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text and event.from_user:
         text = event.text
@@ -217,6 +263,45 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                              message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
 
+        elif (text == "Проверить оплату"):
+            cursor.execute("SELECT * FROM payments WHERE userid=?", (str(event.user_id),))
+            payments = cursor.fetchall()
+            is_paid = False
+            for payment in payments:
+                if str(p2p.check(bill_id=payment[1]).status) == "PAID":
+                    is_paid = True
+                    user_id = payment[0]
+                    keys = payment[2]
+                    print("PAYMENT[1] IS " + payment[1])
+                    cursor.execute("UPDATE users SET balance = balance + ? WHERE userid = ?", (str(keys), str(user_id),))
+                    cursor.execute("DELETE FROM payments WHERE billid = ?", (str(payment[1]),))
+                elif (str(p2p.check(bill_id=payment[1]).status) == "REJECTED") or (str(p2p.check(bill_id=payment[1]).status) == "EXPIRED"):
+                    cursor.execute("DELETE FROM payments WHERE billid = ?", (str(payment[1]),))
+                connection.commit()
+
+            if is_paid:
+                msg = messages.message_payment_successful + str(get_balance(event.user_id))
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=msg, keyboard=main_keyboard.get_keyboard())
+            else:
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_payment_failed, keyboard=main_keyboard.get_keyboard())
+
+        elif (text == "Купить 🔑"):
+            msg_balance = "Ваш текущий баланс: " + str(get_balance(event.user_id)) + "🔑"
+            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                             message=messages.message_pricelist, keyboard=payment_keyboard.get_keyboard())
+            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                             message=msg_balance, keyboard=main_keyboard.get_keyboard())
+
+        elif (text == "1x 🔑"):
+            comment = str(event.user_id) + "_" + str(random.randint(100000, 999999))
+            bill = p2p.bill(amount=5, lifetime=2, comment=comment)
+            msg = messages.message_payment + bill.pay_url
+            add_payment(event.user_id, bill.bill_id, 1)
+            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                             message=msg, keyboard=check_payment_keyboard.get_keyboard())
+
         elif (text == "Проверить пользователя"):
             set_workflag(event.user_id, 1)
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
@@ -225,7 +310,8 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
         else:
             get_workflag(event.user_id)
             if (get_workflag(event.user_id) == 1):
-                Thread(target=check, args=(text, event,)).start()
+                if is_enough_keys(event.user_id):
+                    Thread(target=check, args=(text, event,)).start()
             elif (get_workflag(event.user_id) == 2):
                 temp = 1
             else:
