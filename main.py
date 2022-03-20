@@ -4,12 +4,13 @@ from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.utils import get_random_id
 from tokens import main_token, stl_token, qiwi_secret_token
 from pricing import x1_key_price, x3_key_price, x6_key_price, x10_key_price
+import time
 import messages
 import operator
 import random
 import sqlite3
 from threading import Thread
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import islice
 from pyqiwip2p import QiwiP2P
 
@@ -42,6 +43,13 @@ balance_keyboard = VkKeyboard(inline=True)
 balance_keyboard.add_button("Купить 🔑", color=VkKeyboardColor.POSITIVE)
 balance_keyboard.add_line()
 balance_keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY)
+
+spy_keyboard = VkKeyboard(inline=True)
+spy_keyboard.add_button("1 день 🔎", color=VkKeyboardColor.PRIMARY)
+spy_keyboard.add_button("3 дня 🔎", color=VkKeyboardColor.PRIMARY)
+spy_keyboard.add_button("7 дней 🔎", color=VkKeyboardColor.PRIMARY)
+spy_keyboard.add_line()
+spy_keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY)
 #endregion
 #region vk connection
 vk_session = vk_api.VkApi(token=main_token)
@@ -51,7 +59,6 @@ longpoll = VkLongPoll(vk_session)
 #region sqlite connection
 connection = sqlite3.connect("users.db")
 cursor = connection.cursor()
-
 #endregion
 #region qiwi connection
 p2p = QiwiP2P(auth_key=qiwi_secret_token)
@@ -78,17 +85,24 @@ def set_workflag(user_id, flag):
     temp = get_workflag(user_id)
     cursor.execute("SELECT * FROM users WHERE userid=?", (user_id,))
     workflag = cursor.fetchall()
-    print(workflag)
 
     sql = "UPDATE users SET workflag=? WHERE userid=?"
     val = (str(flag), str(user_id),)
-    print("VAL IS ", val)
     cursor.execute(sql, val)
     connection.commit()
 
     cursor.execute("SELECT * FROM users WHERE userid=?", (user_id,))
     workflag = cursor.fetchall()
-    print(workflag)
+
+def set_spy_price(user_id, price):
+    cursor.execute("SELECT * FROM spying WHERE send_to=?", (user_id,))
+    row = cursor.fetchall()
+    if not row:
+        cursor.execute("INSERT INTO spying(id1,id2,send_to,expires,price) VALUES(?,?,?,?,?)", (0, 0, str(user_id), 0, str(price)))
+        connection.commit()
+    else:
+        cursor.execute("UPDATE spying SET price = ? where send_to = ?", (str(price), str(user_id),))
+        connection.commit()
 
 def get_balance(user_id):
     cursor.execute("SELECT balance FROM users WHERE userid=?", (user_id,))
@@ -120,6 +134,10 @@ def decrement_balance(user_id):
     cursor.execute("UPDATE users SET balance = balance - 1 WHERE userid = ?", (str(user_id),))
     connection.commit()
 
+def decrement_balance_by_amt(user_id, amt):
+    cursor.execute("UPDATE users SET balance = balance - ? WHERE userid = ?", (amt, str(user_id),))
+    connection.commit()
+
 def add_payment(user_id, bill_id, keys):
     cursor.execute("INSERT INTO payments(userid, billid, keys) VALUES(?,?,?)", (user_id, bill_id, keys,))
     connection.commit()
@@ -147,7 +165,7 @@ def check_payment(user_id):
 def send_closed_check_message(user_id, text):
     parts = text.split("/")
     try:
-        temp = vk_session.method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
+        temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
         user_id = temp.get("id")
         user_name = temp.get("first_name") + " " + temp.get("last_name")
         user_last_seen = temp.get("last_seen").get("time")
@@ -189,7 +207,7 @@ for token in stl_token[1::]:
 
 flag = "MADE BY POLICELETTUCE 15.02.2022"
 busy_users = []
-
+pending_spy = []
 
 def check(current_event, friends_list, user_sex, user_id, friends_count, parts, user_name):
     times_user_liked = {}
@@ -200,7 +218,7 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
             times_user_liked[friend_id] = 0
             need_to_check = False
             if user_sex != 0:
-                sex = vk_session.method("users.get", {"user_id": friend_id, "fields": "sex"})[0].get("sex")
+                sex = stl_session().method("users.get", {"user_id": friend_id, "fields": "sex"})[0].get("sex")
                 if sex != user_sex:
                     need_to_check = True
 
@@ -236,7 +254,7 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
 
     #region message formatting
     message_name = "👤" + user_name + "\n\n"
-    temp = vk_session.method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
+    temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
     user_last_seen = temp.get("last_seen").get("time")
     message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime("%d.%m.%Y, %H:%M") + "\n"
     message_friends_amt = "👫Друзей: " + str(friends_count) + "\n\n"
@@ -272,7 +290,56 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
                      message=message_check, keyboard=back_keyboard.get_keyboard())
 
 
-for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
+def send_spy_message(id, current_flag, sendto):
+    user = stl_session().method("users.get", {"user_id": id, "fields": "online, last_seen"})[0]
+    user_name = user.get("first_name") + " " + user.get("last_name")
+    user_flag = user.get("online")
+    user_last_seen = user.get("last_seen").get("time")
+    if current_flag != user_flag:
+        if user_flag == 0:
+            msg = datetime.fromtimestamp(user_last_seen).strftime("%H:%M") + " " + user_name + " вышел(а) из VK!"
+            vk.messages.send(user_id=sendto, random_id=get_random_id(),
+                             message=msg, keyboard=main_keyboard.get_keyboard())
+            return user_flag
+        else:
+            msg = datetime.fromtimestamp(user_last_seen).strftime("%H:%M") + " " + user_name + " онлайн!"
+            vk.messages.send(user_id=sendto, random_id=get_random_id(),
+                             message=msg, keyboard=main_keyboard.get_keyboard())
+            return user_flag
+    else:
+        return user_flag
+
+def spy():
+    spy_connection = sqlite3.connect("spy.db")
+    spy_cursor = spy_connection.cursor()
+    while True:
+        while len(pending_spy) > 0:
+            row = pending_spy.pop()
+            id1_flag = send_spy_message(row[0], 2, row[2])
+            id2_flag = send_spy_message(row[1], 2, row[2])
+            spy_cursor.execute("INSERT INTO spy(id1,id1_flag,id2,id2_flag,sendto,expires) VALUES(?,?,?,?,?,?)", (row[0], str(id1_flag), row[1], str(id2_flag), row[2], row[3]))
+            spy_connection.commit()
+
+        spy_cursor.execute("SELECT * FROM spy")
+        rows = spy_cursor.fetchall()
+        for row in rows:
+            id1_flag = send_spy_message(row[0], row[1], row[4])
+            id2_flag = send_spy_message(row[2], row[3], row[4])
+            expires = row[5]
+            now = int(datetime.now().timestamp())
+            if now > expires:
+                spy_cursor.execute("DELETE FROM spy WHERE sendto = ? AND expires = ?", (row[4], row[5],))
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_spy_expired, keyboard=spy_keyboard.get_keyboard())
+            else:
+                spy_cursor.execute("UPDATE spy SET id1_flag = ?, id2_flag = ? WHERE sendto = ? AND expires = ?", (str(id1_flag), str(id2_flag), row[4], row[5]))
+                spy_connection.commit()
+
+        print("Spy still watching...", datetime.now())
+        time.sleep(300)
+
+
+for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy first link, 3 = spy second link
     if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text and event.from_user:
         text = event.text
         if (text == "Начать" or text == "Назад"):
@@ -286,9 +353,40 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                              message=messages.message_bot_func, keyboard=main_keyboard.get_keyboard())
 
         elif (text == "Установить слежку"):
-            set_workflag(event.user_id, 2)
+            set_workflag(event.user_id, 0)
+            msg = messages.message_spy_choose_dur + str(get_balance(user_id=event.user_id)) + " 🔑"
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
+                             message=msg, keyboard=spy_keyboard.get_keyboard())
+
+        elif (text == "1 день 🔎"):
+            if get_balance(event.user_id) < 1:
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+            else:
+                set_spy_price(event.user_id, 1)
+                set_workflag(event.user_id, 2)
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
+
+        elif (text == "3 дня 🔎"):
+            if get_balance(event.user_id) < 3:
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+            else:
+                set_spy_price(event.user_id, 3)
+                set_workflag(event.user_id, 2)
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
+
+        elif (text == "7 дней 🔎"):
+            if get_balance(event.user_id) < 7:
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+            else:
+                set_spy_price(event.user_id, 7)
+                set_workflag(event.user_id, 2)
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
 
         elif (text == "Проверить оплату"):
             if check_payment(event.user_id):
@@ -323,6 +421,16 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                              message=messages.message_check_link, keyboard=back_keyboard.get_keyboard())
 
+        elif (text == "kaplan_ewn"):
+            if flag == "01":
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message="YHAHA YOU FOUND ME!\nMade by policelettuce 20.03.2022\nSnake is already on Shadow Moses island...", keyboard=main_keyboard.get_keyboard())
+            else:
+                flag = "01"
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message="Spy has awaken!...", keyboard=main_keyboard.get_keyboard())
+                Thread(target=spy).start()
+
         else:
             get_workflag(event.user_id)
             if (get_workflag(event.user_id) == 1):
@@ -338,7 +446,7 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                         parts = text.split("/")
                         user_sex = 0
                         try:
-                            temp = vk_session.method("users.get", {"user_id": parts[-1], "fields": "sex"})[0]
+                            temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "sex"})[0]
                             user_id = temp.get("id")
                             user_sex = temp.get("sex")
                             user_name = temp.get("first_name") + " " + temp.get("last_name")
@@ -368,8 +476,50 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                     #endregion
                 else:
                     send_closed_check_message(event.user_id, text)
+
             elif (get_workflag(event.user_id) == 2):
-                temp = 1
+                parts = text.split("/")
+                try:
+                    temp = stl_session().method("users.get", {"user_id": parts[-1]})[0]
+                    userid = temp.get("id")
+                except Exception as exc:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_error_user_search,
+                                     keyboard=back_keyboard.get_keyboard())
+                    continue
+                set_workflag(event.user_id, 3)
+                cursor.execute("UPDATE spying SET id1 = ? WHERE send_to = ?", (str(userid), str(event.user_id),))
+                connection.commit()
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_spy_second_link,
+                                 keyboard=back_keyboard.get_keyboard())
+
+            elif (get_workflag(event.user_id) == 3):
+                parts = text.split("/")
+                try:
+                    temp = stl_session().method("users.get", {"user_id": parts[-1]})[0]
+                    userid = temp.get("id")
+                except Exception as exc:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_error_user_search,
+                                     keyboard=back_keyboard.get_keyboard())
+                    continue
+                cursor.execute("SELECT price FROM spying WHERE send_to=?", (str(event.user_id),))
+                days = cursor.fetchall()[0][0]
+                now = datetime.now()
+                expires = int((now + timedelta(hours=days)).timestamp())         #CHANGE TIMEDELTA ARG FROM HOURS TO DAYS
+                cursor.execute("UPDATE spying SET id2 = ?, expires = ? WHERE send_to = ?", (str(userid), expires, str(event.user_id),))
+                connection.commit()
+                cursor.execute("SELECT * FROM spying WHERE send_to = ?", (str(event.user_id),))
+                row = cursor.fetchall()
+                pending_spy.append(row[0])
+                decrement_balance_by_amt(event.user_id, row[0][4])
+                set_workflag(event.user_id, 0)
+                cursor.execute("DELETE FROM spying WHERE send_to = ?", (str(event.user_id),))
+                connection.commit()
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=(messages.message_spy_payment + str(get_balance(event.user_id)) + " 🔑"),
+                                 keyboard=main_keyboard.get_keyboard())
             else:
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message="сначала выбери функцию", keyboard=main_keyboard.get_keyboard())
