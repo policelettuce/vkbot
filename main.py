@@ -330,7 +330,7 @@ def spy():
             now = int(datetime.now().timestamp())
             if now > expires:
                 spy_cursor.execute("DELETE FROM spy WHERE sendto = ? AND expires = ?", (row[4], row[5],))
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                vk.messages.send(user_id=row[4], random_id=get_random_id(),
                                  message=messages.message_spy_expired, keyboard=spy_keyboard.get_keyboard())
             else:
                 spy_cursor.execute("UPDATE spy SET id1_flag = ?, id2_flag = ? WHERE sendto = ? AND expires = ?", (str(id1_flag), str(id2_flag), row[4], row[5]))
