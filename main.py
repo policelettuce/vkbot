@@ -206,10 +206,14 @@ def send_closed_check_message(user_id, text):
                      keyboard=balance_keyboard.get_keyboard())
 
 def check_for_banned_tokens():
-    ctr = 0
+    ctr = 1
     for token in stl_token[1::]:
         print(ctr, ") TOKEN ", token, " : ")
-        res = stl_session().method("friends.get", {"user_id": "253605549"})
+        ctr = ctr + 1
+        try:
+            res = stl_session().method("friends.get", {"user_id": "253605549"})
+        except Exception as exc:
+            print(exc)
 
 
 check_for_banned_tokens()
