@@ -205,12 +205,14 @@ def send_closed_check_message(user_id, text):
                      message=message_check,
                      keyboard=balance_keyboard.get_keyboard())
 
-#region check for banned tokens
-for token in stl_token[1::]:
-    print("TOKEN ", token, " : ")
-    res = stl_session().method("friends.get", {"user_id": "253605549"})
-#endregion
+def check_for_banned_tokens():
+    ctr = 0
+    for token in stl_token[1::]:
+        print(ctr, ") TOKEN ", token, " : ")
+        res = stl_session().method("friends.get", {"user_id": "253605549"})
 
+
+check_for_banned_tokens()
 flag = "MADE BY POLICELETTUCE 15.02.2022"
 busy_users = []
 pending_spy = []
@@ -431,6 +433,11 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message="Spy has awaken!...", keyboard=main_keyboard.get_keyboard())
                 Thread(target=spy).start()
+
+        elif (text == "tokens_ewn"):
+            check_for_banned_tokens()
+            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                             message="done, check the console...", keyboard=back_keyboard.get_keyboard())
 
         else:
             get_workflag(event.user_id)
