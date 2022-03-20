@@ -5,6 +5,7 @@ from vk_api.utils import get_random_id
 from tokens import main_token, stl_token, qiwi_secret_token
 from pricing import x1_key_price, x3_key_price, x6_key_price, x10_key_price
 import time
+import os
 import messages
 import operator
 import random
@@ -13,6 +14,11 @@ from threading import Thread
 from datetime import datetime, timedelta
 from itertools import islice
 from pyqiwip2p import QiwiP2P
+
+print(time.strftime('%Y-%m-%d %H:%M:%S'))
+os.environ['TZ'] = 'Europe/Moscow'
+time.tzset()
+print(time.strftime('%Y-%m-%d %H:%M:%S'))
 
 #region keyboards
 main_keyboard = VkKeyboard(one_time=True)
@@ -210,6 +216,7 @@ busy_users = []
 pending_spy = []
 
 def check(current_event, friends_list, user_sex, user_id, friends_count, parts, user_name):
+    print("STARTED CHECK OF: ", user_id, " REQUESTER: ", current_event.user_id)
     times_user_liked = {}
     no_mutual_friends = []
 
@@ -227,11 +234,8 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
 
             if need_to_check:
                 mutual = stl_session().method("friends.getMutual", {"source_uid": user_id, "target_uids": friend_id})[0].get("common_count")
-                print("CHECKING MUTUAL BETWEEN ", user_id, " AND ", friend_id)
-                print("AMT OF MUTUALS: ", mutual)
                 if mutual == 0:
                     no_mutual_friends.append(friend_id)
-                    print("APPENDED!")
 
                 photos = stl_session().method("photos.get", {"user_id": friend_id, "album_id": "profile"}).get("items")
                 photos += stl_session().method("photos.get", {"user_id": friend_id, "album_id": "wall"}).get("items")
@@ -241,7 +245,6 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
                                                     "owner_id": friend_id, "item_id": photo.get("id")}).get("liked")
                     if (is_liked):
                         times_user_liked[friend_id] += 1
-                        print("FOUND LIKED PHOTO! TOTAL LIKES BY USER: ", times_user_liked[friend_id])
 
         except Exception:
             continue
@@ -249,8 +252,6 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
     times_user_liked = sorted(times_user_liked.items(), key=operator.itemgetter(1))
     times_user_liked.reverse()
     random.shuffle(no_mutual_friends)
-    print("LIKES: ", times_user_liked)
-    print(no_mutual_friends)
 
     #region message formatting
     message_name = "👤" + user_name + "\n\n"
@@ -287,7 +288,7 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
     #endregion
     busy_users.remove(current_event.user_id)
     vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
-                     message=message_check, keyboard=back_keyboard.get_keyboard())
+                     message=message_check, keyboard=main_keyboard.get_keyboard())
 
 
 def send_spy_message(id, current_flag, sendto):
@@ -471,7 +472,8 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
 
                         decrement_balance(event.user_id)    # ПИЗДИМ денЬГИ У АБОненТА
                         vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                         message=(messages.message_check_in_progress + str(get_balance(event.user_id)) + " 🔑"))
+                                         message=(messages.message_check_in_progress + str(get_balance(event.user_id)) + " 🔑"),
+                                         keyboard=back_keyboard.get_keyboard())
                         Thread(target=check, args=(event, friends_list, user_sex, user_id, friends_count, parts, user_name)).start()
                     #endregion
                 else:
