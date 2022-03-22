@@ -51,9 +51,9 @@ balance_keyboard.add_line()
 balance_keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY)
 
 spy_keyboard = VkKeyboard(inline=True)
-spy_keyboard.add_button("1 день 🔎", color=VkKeyboardColor.PRIMARY)
-spy_keyboard.add_button("3 дня 🔎", color=VkKeyboardColor.PRIMARY)
-spy_keyboard.add_button("7 дней 🔎", color=VkKeyboardColor.PRIMARY)
+spy_keyboard.add_button("1 день", color=VkKeyboardColor.PRIMARY)
+spy_keyboard.add_button("3 дня", color=VkKeyboardColor.PRIMARY)
+spy_keyboard.add_button("7 дней", color=VkKeyboardColor.PRIMARY)
 spy_keyboard.add_line()
 spy_keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY)
 #endregion
@@ -198,7 +198,7 @@ def send_closed_check_message(user_id, text):
     message_liked = "❤Больше всего лайкает: 🔒\n"
     message_no_mutuals = "🤔Нет общих друзей с: 🔒\n"
     message_most_wanted = "🤭Самый подозрительный человек: 🔒\n\n"
-    message_fin = "Узнать данные за 🔒 вы можете всего за один 🔑 ключ!\nВаш баланс: 0 🔑"
+    message_fin = "Узнать данные за 🔒 вы можете всего за один 🔑 ключ!\n\nВаш баланс: 0 🔑"
     message_check = message_name + message_last_seen + message_friends_amt + message_liked + message_no_mutuals + message_most_wanted + message_fin
     #endregion
     vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
@@ -365,7 +365,7 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                              message=msg, keyboard=spy_keyboard.get_keyboard())
 
-        elif (text == "1 день 🔎"):
+        elif (text == "1 день"):
             if get_balance(event.user_id) < 1:
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
@@ -375,7 +375,7 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
 
-        elif (text == "3 дня 🔎"):
+        elif (text == "3 дня"):
             if get_balance(event.user_id) < 3:
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
@@ -385,7 +385,7 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
 
-        elif (text == "7 дней 🔎"):
+        elif (text == "7 дней"):
             if get_balance(event.user_id) < 7:
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
@@ -547,5 +547,5 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                                  keyboard=main_keyboard.get_keyboard())
             else:
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message="сначала выбери функцию", keyboard=main_keyboard.get_keyboard())
+                                 message=messages.message_choose, keyboard=main_keyboard.get_keyboard())
 
