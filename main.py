@@ -503,6 +503,18 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                 cursor.execute("UPDATE users SET balance = ? WHERE userid = ?", (str(amt), str(id),))
                 connection.commit()
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message="Set!", keyboard=back_keyboard.get_keyboard())
+            else:
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message="EASTEREGG_POLICELETTUCE_01: You found me! Nice try, but you're not allowed to do that...", keyboard=back_keyboard.get_keyboard())
+
+        elif ((text.split("_"))[0] == "ADDKEYS"):
+            id = (text.split("_"))[1]
+            amt = (text.split("_"))[2]
+            if (event.user_id == 253605549 or event.user_id == 96982440):
+                cursor.execute("UPDATE users SET balance = balance + ? WHERE userid = ?", (str(amt), str(id),))
+                connection.commit()
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message="Added!", keyboard=back_keyboard.get_keyboard())
             else:
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
