@@ -74,7 +74,6 @@ def stl_session():
     stl_token[0] += 1
     if stl_token[0] >= len(stl_token):
         stl_token[0] = 1
-
     return vk_api.VkApi(token=stl_token[stl_token[0]])
 
 def get_workflag(user_id):
@@ -179,6 +178,9 @@ def send_closed_check_message(user_id, text):
         vk.messages.send(user_id=user_id, random_id=get_random_id(),
                          message=messages.message_error_user_search,
                          keyboard=back_keyboard.get_keyboard())
+        if (str(exc).split(" ")[0] == "[5]"):
+            print("CAUGHT EXCEPTION: ", exc)
+            remove_last_token()
         return
 
     try:
@@ -189,6 +191,9 @@ def send_closed_check_message(user_id, text):
         vk.messages.send(user_id=user_id, random_id=get_random_id(),
                          message=messages.message_error_user_private,
                          keyboard=main_keyboard.get_keyboard())
+        if (str(exc).split(" ")[0] == "[5]"):
+            print("CAUGHT EXCEPTION: ", exc)
+            remove_last_token()
         return
     #region message formatting
     message_name = "👤" + user_name + "\n\n"
@@ -205,15 +210,22 @@ def send_closed_check_message(user_id, text):
                      message=message_check,
                      keyboard=balance_keyboard.get_keyboard())
 
+def remove_last_token():
+    print("REMOVED BAD TOKEN: ", stl_token[stl_token[0]])
+    stl_token.remove(stl_token[stl_token[0]])
+    stl_token[0] -= 1
+
 def check_for_banned_tokens():
-    ctr = 1
+    ctr = 0
     for token in stl_token[1::]:
-        print(ctr, ") TOKEN ", token, " : ")
-        ctr = ctr + 1
         try:
             res = stl_session().method("friends.get", {"user_id": "253605549"})
-        except Exception as exc:
-            print(exc)
+        except vk_api.ApiError as exc:
+            print("CAUGHT EXCEPTION: ", exc)
+            if (str(exc).split(" ")[0] == "[5]"):
+                ctr += 1
+                remove_last_token()
+    print("Total bad tokens: ", ctr)
 
 
 check_for_banned_tokens()
@@ -231,7 +243,13 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
             times_user_liked[friend_id] = 0
             need_to_check = False
             if user_sex != 0:
-                sex = stl_session().method("users.get", {"user_id": friend_id, "fields": "sex"})[0].get("sex")
+                sex = 1337
+                try:
+                    sex = stl_session().method("users.get", {"user_id": friend_id, "fields": "sex"})[0].get("sex")
+                except vk_api.ApiError as exc:
+                    if (str(exc).split(" ")[0] == "[5]"):
+                        print("CAUGHT EXCEPTION: ", exc)
+                        remove_last_token()
                 if sex != user_sex:
                     need_to_check = True
 
@@ -247,12 +265,20 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
                 photos += stl_session().method("photos.get", {"user_id": friend_id, "album_id": "wall"}).get("items")
 
                 for photo in photos:
-                    is_liked = stl_session().method("likes.isLiked", {"user_id": user_id, "type": "photo",
-                                                    "owner_id": friend_id, "item_id": photo.get("id")}).get("liked")
-                    if (is_liked):
-                        times_user_liked[friend_id] += 1
+                    try:
+                        is_liked = stl_session().method("likes.isLiked", {"user_id": user_id, "type": "photo",
+                                                        "owner_id": friend_id, "item_id": photo.get("id")}).get("liked")
+                        if (is_liked):
+                            times_user_liked[friend_id] += 1
+                    except vk_api.ApiError as exc:
+                        if (str(exc).split(" ")[0] == "[5]"):
+                            print("CAUGHT EXCEPTION: ", exc)
+                            remove_last_token()
 
-        except Exception:
+        except vk_api.ApiError as exc:
+            if (str(exc).split(" ")[0] == "[5]"):
+                print("CAUGHT EXCEPTION: ", exc)
+                remove_last_token()
             continue
 
     times_user_liked = sorted(times_user_liked.items(), key=operator.itemgetter(1))
@@ -260,35 +286,61 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
     random.shuffle(no_mutual_friends)
 
     #region message formatting
-    message_name = "👤" + user_name + "\n\n"
-    temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
-    user_last_seen = temp.get("last_seen").get("time")
-    message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime("%d.%m.%Y, %H:%M") + "\n"
-    message_friends_amt = "👫Друзей: " + str(friends_count) + "\n\n"
+    message_name = ""
+    message_last_seen = ""
+    message_friends_amt = ""
+    try:
+        message_name = "👤" + user_name + "\n\n"
+        temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
+        user_last_seen = temp.get("last_seen").get("time")
+        message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime("%d.%m.%Y, %H:%M") + "\n"
+        message_friends_amt = "👫Друзей: " + str(friends_count) + "\n\n"
+    except vk_api.ApiError as exc:
+        if (str(exc).split(" ")[0] == "[5]"):
+            print("CAUGHT EXCEPTION: ", exc)
+            remove_last_token()
 
     message_liked = "❤Больше всего лайкает:\n"
     ctr = 1
     for key in islice(times_user_liked, 5):
-        temp = stl_session().method("users.get", {"user_id": key[0]})[0]
-        name = temp.get("first_name") + " " + temp.get("last_name")
-        message_liked += str(ctr) + ") [id" + str(key[0]) + "|" + str(name) + "]: " + str(key[1]) + "\n"
-        ctr += 1
+        try:
+            temp = stl_session().method("users.get", {"user_id": key[0]})[0]
+            name = temp.get("first_name") + " " + temp.get("last_name")
+            message_liked += str(ctr) + ") [id" + str(key[0]) + "|" + str(name) + "]: " + str(key[1]) + "\n"
+            ctr += 1
+        except vk_api.ApiError as exc:
+            if (str(exc).split(" ")[0] == "[5]"):
+                print("CAUGHT EXCEPTION: ", exc)
+                remove_last_token()
+            continue
     message_liked += "\n"
 
     message_no_mutuals = "🤔Нет общих друзей с:\n"
     ctr = 1
     for id in no_mutual_friends[:5]:
-        temp = stl_session().method("users.get", {"user_id": id})[0]
-        name = temp.get("first_name") + " " + temp.get("last_name")
-        message_no_mutuals += str(ctr) + ") [id" + str(id) + "|" + str(name) + "]\n"
-        ctr += 1
+        try:
+            temp = stl_session().method("users.get", {"user_id": id})[0]
+            name = temp.get("first_name") + " " + temp.get("last_name")
+            message_no_mutuals += str(ctr) + ") [id" + str(id) + "|" + str(name) + "]\n"
+            ctr += 1
+        except vk_api.ApiError as exc:
+            if (str(exc).split(" ")[0] == "[5]"):
+                print("CAUGHT EXCEPTION: ", exc)
+                remove_last_token()
+            continue
     message_no_mutuals += "\n"
 
     message_most_wanted = "🤭Самый подозрительный человек:\n"
     for key in islice(times_user_liked, 1):
-        temp = stl_session().method("users.get", {"user_id": key[0]})[0]
-        name = temp.get("first_name") + " " + temp.get("last_name")
-        message_most_wanted += "[id" + str(key[0]) + "|" + str(name) + "]" + "\n"
+        try:
+            temp = stl_session().method("users.get", {"user_id": key[0]})[0]
+            name = temp.get("first_name") + " " + temp.get("last_name")
+            message_most_wanted += "[id" + str(key[0]) + "|" + str(name) + "]" + "\n"
+        except vk_api.ApiError as exc:
+            if (str(exc).split(" ")[0] == "[5]"):
+                print("CAUGHT EXCEPTION: ", exc)
+                remove_last_token()
+            continue
 
     message_check = message_name + message_last_seen + message_friends_amt + message_liked + message_no_mutuals + message_most_wanted
     #endregion
@@ -425,8 +477,9 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
 
         elif (text == "Проверить пользователя"):
             set_workflag(event.user_id, 1)
+            msg = messages.message_check_link + str(get_balance(event.user_id)) + " 🔑"
             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message=messages.message_check_link, keyboard=back_keyboard.get_keyboard())
+                             message=msg, keyboard=back_keyboard.get_keyboard())
 
         elif (text == "kaplan_ewn"):
             if flag == "01":
@@ -476,6 +529,9 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                             user_name = temp.get("first_name") + " " + temp.get("last_name")
                         except Exception as exc:
                             busy_users.remove(event.user_id)
+                            if (str(exc).split(" ")[0] == "[5]"):
+                                print("CAUGHT EXCEPTION: ", exc)
+                                remove_last_token()
                             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                              message=messages.message_error_user_search,
                                              keyboard=back_keyboard.get_keyboard())
@@ -487,6 +543,9 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                             friends_list = temp.get("items")
                             friends_count = temp.get("count")
                         except Exception as exc:
+                            if (str(exc).split(" ")[0] == "[5]"):
+                                print("CAUGHT EXCEPTION: ", exc)
+                                remove_last_token()
                             busy_users.remove(event.user_id)
                             vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                              message=messages.message_error_user_private,
@@ -508,6 +567,9 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                     temp = stl_session().method("users.get", {"user_id": parts[-1]})[0]
                     userid = temp.get("id")
                 except Exception as exc:
+                    if (str(exc).split(" ")[0] == "[5]"):
+                        print("CAUGHT EXCEPTION: ", exc)
+                        remove_last_token()
                     vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                      message=messages.message_error_user_search,
                                      keyboard=back_keyboard.get_keyboard())
@@ -525,6 +587,9 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                     temp = stl_session().method("users.get", {"user_id": parts[-1]})[0]
                     userid = temp.get("id")
                 except Exception as exc:
+                    if (str(exc).split(" ")[0] == "[5]"):
+                        print("CAUGHT EXCEPTION: ", exc)
+                        remove_last_token()
                     vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                      message=messages.message_error_user_search,
                                      keyboard=back_keyboard.get_keyboard())
@@ -548,4 +613,3 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
             else:
                 vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
                                  message=messages.message_choose, keyboard=main_keyboard.get_keyboard())
-
