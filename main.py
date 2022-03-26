@@ -124,8 +124,12 @@ def buy_keys(cash_amount, keys_amount, user_id):
     bill = p2p.bill(amount=cash_amount, lifetime=15, comment=comment)
     msg = messages.message_payment + bill.pay_url
     add_payment(event.user_id, bill.bill_id, keys_amount)
-    vk.messages.send(user_id=user_id, random_id=get_random_id(),
-                     message=msg, keyboard=check_payment_keyboard.get_keyboard())
+    try:
+        vk.messages.send(user_id=user_id, random_id=get_random_id(),
+                         message=msg, keyboard=check_payment_keyboard.get_keyboard())
+    except Exception as msgexc:
+        print(msgexc)
+        pass
 
 def is_enough_keys(user_id):
     cursor.execute("SELECT balance FROM users WHERE userid=?", (user_id,))
@@ -170,14 +174,18 @@ def check_payment(user_id):
 def send_closed_check_message(user_id, text):
     parts = text.split("/")
     try:
-        temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
+        temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen", "lang": "0"})[0]
         user_id = temp.get("id")
         user_name = temp.get("first_name") + " " + temp.get("last_name")
         user_last_seen = temp.get("last_seen").get("time")
     except Exception as exc:
-        vk.messages.send(user_id=user_id, random_id=get_random_id(),
-                         message=messages.message_error_user_search,
-                         keyboard=back_keyboard.get_keyboard())
+        try:
+            vk.messages.send(user_id=user_id, random_id=get_random_id(),
+                             message=messages.message_error_user_search,
+                             keyboard=back_keyboard.get_keyboard())
+        except Exception as msgexc:
+            print(msgexc)
+            pass
         if (str(exc).split(" ")[0] == "[5]"):
             print("CAUGHT EXCEPTION: ", exc)
             remove_last_token()
@@ -185,12 +193,16 @@ def send_closed_check_message(user_id, text):
 
     try:
         temp = stl_session().method("friends.get",
-                                    {"user_id": user_id, "order": "random", "count": 500})
+                                    {"user_id": user_id, "order": "random", "count": 500, "lang": "0"})
         friends_count = temp.get("count")
     except Exception as exc:
-        vk.messages.send(user_id=user_id, random_id=get_random_id(),
-                         message=messages.message_error_user_private,
-                         keyboard=main_keyboard.get_keyboard())
+        try:
+            vk.messages.send(user_id=user_id, random_id=get_random_id(),
+                             message=messages.message_error_user_private,
+                             keyboard=main_keyboard.get_keyboard())
+        except Exception as msgexc:
+            print(msgexc)
+            pass
         if (str(exc).split(" ")[0] == "[5]"):
             print("CAUGHT EXCEPTION: ", exc)
             remove_last_token()
@@ -206,9 +218,13 @@ def send_closed_check_message(user_id, text):
     message_fin = "Узнать данные за 🔒 вы можете всего за один 🔑 ключ!\n\nВаш баланс: 0 🔑"
     message_check = message_name + message_last_seen + message_friends_amt + message_liked + message_no_mutuals + message_most_wanted + message_fin
     #endregion
-    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                     message=message_check,
-                     keyboard=balance_keyboard.get_keyboard())
+    try:
+        vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                         message=message_check,
+                         keyboard=balance_keyboard.get_keyboard())
+    except Exception as msgexc:
+        print(msgexc)
+        pass
 
 def remove_last_token():
     print("REMOVED BAD TOKEN: ", stl_token[stl_token[0]])
@@ -219,7 +235,7 @@ def check_for_banned_tokens():
     ctr = 0
     for token in stl_token[1::]:
         try:
-            res = stl_session().method("friends.get", {"user_id": "253605549"})
+            res = stl_session().method("friends.get", {"user_id": "253605549", "lang": "0"})
         except vk_api.ApiError as exc:
             print("CAUGHT EXCEPTION: ", exc)
             if (str(exc).split(" ")[0] == "[5]"):
@@ -245,7 +261,7 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
             if user_sex != 0:
                 sex = 1337
                 try:
-                    sex = stl_session().method("users.get", {"user_id": friend_id, "fields": "sex"})[0].get("sex")
+                    sex = stl_session().method("users.get", {"user_id": friend_id, "fields": "sex", "lang": "0"})[0].get("sex")
                 except vk_api.ApiError as exc:
                     if (str(exc).split(" ")[0] == "[5]"):
                         print("CAUGHT EXCEPTION: ", exc)
@@ -257,17 +273,17 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
                 need_to_check = True
 
             if need_to_check:
-                mutual = stl_session().method("friends.getMutual", {"source_uid": user_id, "target_uids": friend_id})[0].get("common_count")
+                mutual = stl_session().method("friends.getMutual", {"source_uid": user_id, "target_uids": friend_id, "lang": "0"})[0].get("common_count")
                 if mutual == 0:
                     no_mutual_friends.append(friend_id)
 
-                photos = stl_session().method("photos.get", {"user_id": friend_id, "album_id": "profile"}).get("items")
-                photos += stl_session().method("photos.get", {"user_id": friend_id, "album_id": "wall"}).get("items")
+                photos = stl_session().method("photos.get", {"user_id": friend_id, "album_id": "profile", "lang": "0"}).get("items")
+                photos += stl_session().method("photos.get", {"user_id": friend_id, "album_id": "wall", "lang": "0"}).get("items")
 
                 for photo in photos:
                     try:
                         is_liked = stl_session().method("likes.isLiked", {"user_id": user_id, "type": "photo",
-                                                        "owner_id": friend_id, "item_id": photo.get("id")}).get("liked")
+                                                        "owner_id": friend_id, "item_id": photo.get("id"), "lang": "0"}).get("liked")
                         if (is_liked):
                             times_user_liked[friend_id] += 1
                     except vk_api.ApiError as exc:
@@ -291,7 +307,7 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
     message_friends_amt = ""
     try:
         message_name = "👤" + user_name + "\n\n"
-        temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen"})[0]
+        temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen", "lang": "0"})[0]
         user_last_seen = temp.get("last_seen").get("time")
         message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime("%d.%m.%Y, %H:%M") + "\n"
         message_friends_amt = "👫Друзей: " + str(friends_count) + "\n\n"
@@ -304,7 +320,7 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
     ctr = 1
     for key in islice(times_user_liked, 5):
         try:
-            temp = stl_session().method("users.get", {"user_id": key[0]})[0]
+            temp = stl_session().method("users.get", {"user_id": key[0], "lang": "0"})[0]
             name = temp.get("first_name") + " " + temp.get("last_name")
             message_liked += str(ctr) + ") [id" + str(key[0]) + "|" + str(name) + "]: " + str(key[1]) + "\n"
             ctr += 1
@@ -319,7 +335,7 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
     ctr = 1
     for id in no_mutual_friends[:5]:
         try:
-            temp = stl_session().method("users.get", {"user_id": id})[0]
+            temp = stl_session().method("users.get", {"user_id": id, "lang": "0"})[0]
             name = temp.get("first_name") + " " + temp.get("last_name")
             message_no_mutuals += str(ctr) + ") [id" + str(id) + "|" + str(name) + "]\n"
             ctr += 1
@@ -333,7 +349,7 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
     message_most_wanted = "🤭Самый подозрительный человек:\n"
     for key in islice(times_user_liked, 1):
         try:
-            temp = stl_session().method("users.get", {"user_id": key[0]})[0]
+            temp = stl_session().method("users.get", {"user_id": key[0], "lang": "0"})[0]
             name = temp.get("first_name") + " " + temp.get("last_name")
             message_most_wanted += "[id" + str(key[0]) + "|" + str(name) + "]" + "\n"
         except vk_api.ApiError as exc:
@@ -345,25 +361,37 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
     message_check = message_name + message_last_seen + message_friends_amt + message_liked + message_no_mutuals + message_most_wanted
     #endregion
     busy_users.remove(current_event.user_id)
-    vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
-                     message=message_check, keyboard=main_keyboard.get_keyboard())
+    try:
+        vk.messages.send(user_id=current_event.user_id, random_id=get_random_id(),
+                         message=message_check, keyboard=main_keyboard.get_keyboard())
+    except Exception as msgexc:
+        print(msgexc)
+        pass
 
 
 def send_spy_message(id, current_flag, sendto):
-    user = stl_session().method("users.get", {"user_id": id, "fields": "online, last_seen"})[0]
+    user = stl_session().method("users.get", {"user_id": id, "fields": "online, last_seen", "lang": "0"})[0]
     user_name = user.get("first_name") + " " + user.get("last_name")
     user_flag = user.get("online")
     user_last_seen = user.get("last_seen").get("time")
     if current_flag != user_flag:
         if user_flag == 0:
             msg = datetime.fromtimestamp(user_last_seen).strftime("%H:%M") + " " + user_name + " вышел(а) из VK!"
-            vk.messages.send(user_id=sendto, random_id=get_random_id(),
-                             message=msg, keyboard=main_keyboard.get_keyboard())
+            try:
+                vk.messages.send(user_id=sendto, random_id=get_random_id(),
+                                 message=msg, keyboard=main_keyboard.get_keyboard())
+            except Exception as msgexc:
+                print(msgexc)
+                pass
             return user_flag
         else:
             msg = datetime.fromtimestamp(user_last_seen).strftime("%H:%M") + " " + user_name + " онлайн!"
-            vk.messages.send(user_id=sendto, random_id=get_random_id(),
-                             message=msg, keyboard=main_keyboard.get_keyboard())
+            try:
+                vk.messages.send(user_id=sendto, random_id=get_random_id(),
+                                 message=msg, keyboard=main_keyboard.get_keyboard())
+            except Exception as msgexc:
+                print(msgexc)
+                pass
             return user_flag
     else:
         return user_flag
@@ -388,8 +416,12 @@ def spy():
             now = int(datetime.now().timestamp())
             if now > expires:
                 spy_cursor.execute("DELETE FROM spy WHERE sendto = ? AND expires = ?", (row[4], row[5],))
-                vk.messages.send(user_id=row[4], random_id=get_random_id(),
-                                 message=messages.message_spy_expired, keyboard=spy_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=row[4], random_id=get_random_id(),
+                                     message=messages.message_spy_expired, keyboard=spy_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
             else:
                 spy_cursor.execute("UPDATE spy SET id1_flag = ?, id2_flag = ? WHERE sendto = ? AND expires = ?", (str(id1_flag), str(id2_flag), row[4], row[5]))
                 spy_connection.commit()
@@ -402,66 +434,114 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
     if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text and event.from_user:
         text = event.text
         if (text == "Начать" or text == "Назад"):
-            set_workflag(event.user_id, 0)
-            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message=messages.message_choose, keyboard=main_keyboard.get_keyboard())
+            try:
+                set_workflag(event.user_id, 0)
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_choose, keyboard=main_keyboard.get_keyboard())
+            except Exception as msgexc:
+                print(msgexc)
+                pass
 
         elif (text == "Что бот умеет?"):
-            set_workflag(event.user_id, 0)
-            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message=messages.message_bot_func, keyboard=main_keyboard.get_keyboard())
+            try:
+                set_workflag(event.user_id, 0)
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_bot_func, keyboard=main_keyboard.get_keyboard())
+            except Exception as msgexc:
+                print(msgexc)
+                pass
 
         elif (text == "Установить слежку"):
-            set_workflag(event.user_id, 0)
-            msg = messages.message_spy_choose_dur + str(get_balance(user_id=event.user_id)) + " 🔑"
-            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message=msg, keyboard=spy_keyboard.get_keyboard())
+            try:
+                set_workflag(event.user_id, 0)
+                msg = messages.message_spy_choose_dur + str(get_balance(user_id=event.user_id)) + " 🔑"
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=msg, keyboard=spy_keyboard.get_keyboard())
+            except Exception as msgexc:
+                print(msgexc)
+                pass
 
         elif (text == "1 день"):
             if get_balance(event.user_id) < 1:
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
             else:
-                set_spy_price(event.user_id, 1)
-                set_workflag(event.user_id, 2)
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
+                try:
+                    set_spy_price(event.user_id, 1)
+                    set_workflag(event.user_id, 2)
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
 
         elif (text == "3 дня"):
             if get_balance(event.user_id) < 3:
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
             else:
-                set_spy_price(event.user_id, 3)
-                set_workflag(event.user_id, 2)
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
+                try:
+                    set_spy_price(event.user_id, 3)
+                    set_workflag(event.user_id, 2)
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
 
         elif (text == "7 дней"):
             if get_balance(event.user_id) < 7:
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_insufficient_funds, keyboard=balance_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
             else:
-                set_spy_price(event.user_id, 7)
-                set_workflag(event.user_id, 2)
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
+                try:
+                    set_spy_price(event.user_id, 7)
+                    set_workflag(event.user_id, 2)
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_spy_first_link, keyboard=back_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
 
         elif (text == "Проверить оплату"):
             if check_payment(event.user_id):
-                msg = messages.message_payment_successful + str(get_balance(event.user_id)) + " 🔑"
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=msg, keyboard=main_keyboard.get_keyboard())
+                try:
+                    msg = messages.message_payment_successful + str(get_balance(event.user_id)) + " 🔑"
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=msg, keyboard=main_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
             else:
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=messages.message_payment_failed, keyboard=main_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_payment_failed, keyboard=main_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
 
         elif (text == "Купить 🔑"):
             msg_balance = "Ваш текущий баланс: " + str(get_balance(event.user_id)) + " 🔑"
-            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message=messages.message_pricelist, keyboard=payment_keyboard.get_keyboard())
-            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message=msg_balance, keyboard=main_keyboard.get_keyboard())
+            try:
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=messages.message_pricelist, keyboard=payment_keyboard.get_keyboard())
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=msg_balance, keyboard=main_keyboard.get_keyboard())
+            except Exception as msgexc:
+                print(msgexc)
+                pass
 
         elif (text == "1x 🔑"):
             buy_keys(x1_key_price, 1, event.user_id)
@@ -476,25 +556,41 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
             buy_keys(x10_key_price, 10, event.user_id)
 
         elif (text == "Проверить пользователя"):
-            set_workflag(event.user_id, 1)
-            msg = messages.message_check_link + str(get_balance(event.user_id)) + " 🔑"
-            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message=msg, keyboard=back_keyboard.get_keyboard())
+            try:
+                set_workflag(event.user_id, 1)
+                msg = messages.message_check_link + str(get_balance(event.user_id)) + " 🔑"
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message=msg, keyboard=back_keyboard.get_keyboard())
+            except Exception as msgexc:
+                print(msgexc)
+                pass
 
         elif (text == "kaplan_ewn"):
             if flag == "01":
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message="YHAHA YOU FOUND ME!\nMade by policelettuce 20.03.2022\nSnake is already on Shadow Moses island...", keyboard=main_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message="YHAHA YOU FOUND ME!\nMade by policelettuce 20.03.2022\nSnake is already on Shadow Moses island...", keyboard=main_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
             else:
                 flag = "01"
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message="Spy has awaken!...", keyboard=main_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message="Spy has awaken!...", keyboard=main_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
                 Thread(target=spy).start()
 
         elif (text == "tokens_ewn"):
             check_for_banned_tokens()
-            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                             message="done, check the console...", keyboard=back_keyboard.get_keyboard())
+            try:
+                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                 message="done, check the console...", keyboard=back_keyboard.get_keyboard())
+            except Exception as msgexc:
+                print(msgexc)
+                pass
 
         elif ((text.split("_"))[0] == "SETKEYS"):
             id = (text.split("_"))[1]
@@ -502,11 +598,19 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
             if (event.user_id == 253605549 or event.user_id == 96982440):
                 cursor.execute("UPDATE users SET balance = ? WHERE userid = ?", (str(amt), str(id),))
                 connection.commit()
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message="Set!", keyboard=back_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message="Set!", keyboard=back_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
             else:
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message="EASTEREGG_POLICELETTUCE_01: You found me! Nice try, but you're not allowed to do that...", keyboard=back_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message="EASTEREGG_POLICELETTUCE_01: You found me! Nice try, but you're not allowed to do that...", keyboard=back_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
 
         elif ((text.split("_"))[0] == "ADDKEYS"):
             id = (text.split("_"))[1]
@@ -514,11 +618,19 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
             if (event.user_id == 253605549 or event.user_id == 96982440):
                 cursor.execute("UPDATE users SET balance = balance + ? WHERE userid = ?", (str(amt), str(id),))
                 connection.commit()
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message="Added!", keyboard=back_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message="Added!", keyboard=back_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
             else:
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message="EASTEREGG_POLICELETTUCE_01: You found me! Nice try, but you're not allowed to do that...", keyboard=back_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message="EASTEREGG_POLICELETTUCE_01: You found me! Nice try, but you're not allowed to do that...", keyboard=back_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
 
         else:
             get_workflag(event.user_id)
@@ -527,15 +639,19 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                 if is_enough_keys(event.user_id):
                     #region check start
                     if event.user_id in busy_users:
-                        vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                         message=messages.message_wait_for_check, keyboard=back_keyboard.get_keyboard())
+                        try:
+                            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                             message=messages.message_wait_for_check, keyboard=back_keyboard.get_keyboard())
+                        except Exception as msgexc:
+                            print(msgexc)
+                            pass
                         continue
                     else:
                         busy_users.append(event.user_id)
                         parts = text.split("/")
                         user_sex = 0
                         try:
-                            temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "sex"})[0]
+                            temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "sex", "lang": "0"})[0]
                             user_id = temp.get("id")
                             user_sex = temp.get("sex")
                             user_name = temp.get("first_name") + " " + temp.get("last_name")
@@ -544,14 +660,18 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                             if (str(exc).split(" ")[0] == "[5]"):
                                 print("CAUGHT EXCEPTION: ", exc)
                                 remove_last_token()
-                            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                             message=messages.message_error_user_search,
-                                             keyboard=back_keyboard.get_keyboard())
+                            try:
+                                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                                 message=messages.message_error_user_search,
+                                                 keyboard=back_keyboard.get_keyboard())
+                            except Exception as msgexc:
+                                print(msgexc)
+                                pass
                             continue
 
                         try:
                             temp = stl_session().method("friends.get",
-                                                        {"user_id": user_id, "order": "random", "count": 500})
+                                                        {"user_id": user_id, "order": "random", "count": 500, "lang": "0"})
                             friends_list = temp.get("items")
                             friends_count = temp.get("count")
                         except Exception as exc:
@@ -559,15 +679,23 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                                 print("CAUGHT EXCEPTION: ", exc)
                                 remove_last_token()
                             busy_users.remove(event.user_id)
-                            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                             message=messages.message_error_user_private,
-                                             keyboard=main_keyboard.get_keyboard())
+                            try:
+                                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                                 message=messages.message_error_user_private,
+                                                 keyboard=main_keyboard.get_keyboard())
+                            except Exception as msgexc:
+                                print(msgexc)
+                                pass
                             continue
 
                         decrement_balance(event.user_id)    # ПИЗДИМ денЬГИ У АБОненТА
-                        vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                         message=(messages.message_check_in_progress + str(get_balance(event.user_id)) + " 🔑"),
-                                         keyboard=back_keyboard.get_keyboard())
+                        try:
+                            vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                             message=(messages.message_check_in_progress + str(get_balance(event.user_id)) + " 🔑"),
+                                             keyboard=back_keyboard.get_keyboard())
+                        except Exception as msgexc:
+                            print(msgexc)
+                            pass
                         Thread(target=check, args=(event, friends_list, user_sex, user_id, friends_count, parts, user_name)).start()
                     #endregion
                 else:
@@ -576,40 +704,52 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
             elif (get_workflag(event.user_id) == 2):
                 parts = text.split("/")
                 try:
-                    temp = stl_session().method("users.get", {"user_id": parts[-1]})[0]
+                    temp = stl_session().method("users.get", {"user_id": parts[-1], "lang": "0"})[0]
                     userid = temp.get("id")
                 except Exception as exc:
                     if (str(exc).split(" ")[0] == "[5]"):
                         print("CAUGHT EXCEPTION: ", exc)
                         remove_last_token()
-                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                     message=messages.message_error_user_search,
-                                     keyboard=back_keyboard.get_keyboard())
+                    try:
+                        vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                         message=messages.message_error_user_search,
+                                         keyboard=back_keyboard.get_keyboard())
+                    except Exception as msgexc:
+                        print(msgexc)
+                        pass
                     continue
                 set_workflag(event.user_id, 3)
                 cursor.execute("UPDATE spying SET id1 = ? WHERE send_to = ?", (str(userid), str(event.user_id),))
                 connection.commit()
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=messages.message_spy_second_link,
-                                 keyboard=back_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_spy_second_link,
+                                     keyboard=back_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
 
             elif (get_workflag(event.user_id) == 3):
                 parts = text.split("/")
                 try:
-                    temp = stl_session().method("users.get", {"user_id": parts[-1]})[0]
+                    temp = stl_session().method("users.get", {"user_id": parts[-1], "lang": "0"})[0]
                     userid = temp.get("id")
                 except Exception as exc:
                     if (str(exc).split(" ")[0] == "[5]"):
                         print("CAUGHT EXCEPTION: ", exc)
                         remove_last_token()
-                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                     message=messages.message_error_user_search,
-                                     keyboard=back_keyboard.get_keyboard())
+                    try:
+                        vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                         message=messages.message_error_user_search,
+                                         keyboard=back_keyboard.get_keyboard())
+                    except Exception as msgexc:
+                        print(msgexc)
+                        pass
                     continue
                 cursor.execute("SELECT price FROM spying WHERE send_to=?", (str(event.user_id),))
                 days = cursor.fetchall()[0][0]
                 now = datetime.now()
-                expires = int((now + timedelta(hours=days)).timestamp())         #CHANGE TIMEDELTA ARG FROM HOURS TO DAYS
+                expires = int((now + timedelta(days=days)).timestamp())         #CHANGE TIMEDELTA ARG FROM HOURS TO DAYS
                 cursor.execute("UPDATE spying SET id2 = ?, expires = ? WHERE send_to = ?", (str(userid), expires, str(event.user_id),))
                 connection.commit()
                 cursor.execute("SELECT * FROM spying WHERE send_to = ?", (str(event.user_id),))
@@ -619,9 +759,17 @@ for event in longpoll.listen():         #workflags: 0 = free, 1 = check, 2 = spy
                 set_workflag(event.user_id, 0)
                 cursor.execute("DELETE FROM spying WHERE send_to = ?", (str(event.user_id),))
                 connection.commit()
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=(messages.message_spy_payment + str(get_balance(event.user_id)) + " 🔑"),
-                                 keyboard=main_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=(messages.message_spy_payment + str(get_balance(event.user_id)) + " 🔑"),
+                                     keyboard=main_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
             else:
-                vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
-                                 message=messages.message_choose, keyboard=main_keyboard.get_keyboard())
+                try:
+                    vk.messages.send(user_id=event.user_id, random_id=get_random_id(),
+                                     message=messages.message_choose, keyboard=main_keyboard.get_keyboard())
+                except Exception as msgexc:
+                    print(msgexc)
+                    pass
