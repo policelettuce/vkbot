@@ -177,7 +177,10 @@ def send_closed_check_message(user_id, text):
         temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen", "lang": "0"})[0]
         user_id = temp.get("id")
         user_name = temp.get("first_name") + " " + temp.get("last_name")
-        user_last_seen = temp.get("last_seen").get("time")
+        if temp.get("last_seen") is None:
+            user_last_seen = None
+        else:
+            user_last_seen = temp.get("last_seen").get("time")
     except Exception as exc:
         try:
             vk.messages.send(user_id=user_id, random_id=get_random_id(),
@@ -209,8 +212,11 @@ def send_closed_check_message(user_id, text):
         return
     #region message formatting
     message_name = "👤" + user_name + "\n\n"
-    message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime(
+    if user_last_seen is not None:
+        message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime(
         "%d.%m.%Y, %H:%M") + "\n"
+    else:
+        message_last_seen = ""
     message_friends_amt = "👫Друзей: " + str(friends_count) + "\n\n"
     message_liked = "❤Больше всего лайкает: 🔒\n"
     message_no_mutuals = "🤔Нет общих друзей с: 🔒\n"
@@ -308,8 +314,12 @@ def check(current_event, friends_list, user_sex, user_id, friends_count, parts, 
     try:
         message_name = "👤" + user_name + "\n\n"
         temp = stl_session().method("users.get", {"user_id": parts[-1], "fields": "last_seen", "lang": "0"})[0]
-        user_last_seen = temp.get("last_seen").get("time")
-        message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime("%d.%m.%Y, %H:%M") + "\n"
+        if temp.get("last_seen") is None:
+            user_last_seen = None
+            message_last_seen = ""
+        else:
+            user_last_seen = temp.get("last_seen").get("time")
+            message_last_seen = "🕔Был(а) в сети: " + datetime.fromtimestamp(user_last_seen).strftime("%d.%m.%Y, %H:%M") + "\n"
         message_friends_amt = "👫Друзей: " + str(friends_count) + "\n\n"
     except vk_api.ApiError as exc:
         if (str(exc).split(" ")[0] == "[5]"):
@@ -373,7 +383,10 @@ def send_spy_message(id, current_flag, sendto):
     user = stl_session().method("users.get", {"user_id": id, "fields": "online, last_seen", "lang": "0"})[0]
     user_name = user.get("first_name") + " " + user.get("last_name")
     user_flag = user.get("online")
-    user_last_seen = user.get("last_seen").get("time")
+    if user.get("last_seen") is None:
+        user_last_seen = datetime.now().timestamp()
+    else:
+        user_last_seen = user.get("last_seen").get("time")
     if current_flag != user_flag:
         if user_flag == 0:
             msg = datetime.fromtimestamp(user_last_seen).strftime("%H:%M") + " " + user_name + " вышел(а) из VK!"
